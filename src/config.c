@@ -14,7 +14,9 @@
 
 #define THREAD_COUNT "THREAD_COUNT" // Config param, number of threads in thread pool
 #define VKEY_MAX_ENTITY_COUNT "VKEY_MAX_ENTITY_COUNT" // Config param, number of entities in virtual key
+#define CACHE_SIZE "CACHE_SIZE"  // Config param, the size of each thread cache size, per graph.
 #define VKEY_MAX_ENTITY_COUNT_DEFAULT 100000
+#define CACHE_SIZE_DEFAULT 10
 
 extern RG_Config config; // Global module configuration.
 static bool _initialized = false;
@@ -85,9 +87,33 @@ static uint64_t _Config_GetVirtualKeyEntitiesThreshold(RedisModuleCtx *ctx,
 	return (uint64_t)threshold;
 }
 
+// Tries to fetch the size of a cache for each thread per each graph.
+// Defaults to CACHE_SIZE_DEFAULT
+static uint64_t _Config_GetCacheSize(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+	long long cache_size = CACHE_SIZE_DEFAULT;
+	// Expecting configuration to be in the form of key value pairs.
+	if(argc % 2 == 0) {
+		// Scan arguments for CACHE_SIZE.
+		for(int i = 0; i < argc; i += 2) {
+			const char *param = RedisModule_StringPtrLen(argv[i], NULL);
+			if(strcasecmp(param, CACHE_SIZE) == 0) {
+				RedisModule_StringToLongLong(argv[i + 1], &cache_size);
+				break;
+			}
+		}
+	}
+
+	// Sanity.
+	assert(cache_size > 0 && "A positive integer is required for cache size");
+	RedisModule_Log(ctx, "notice", "Cache size is set to %d for each thread, per graph.", cache_size);
+
+	return (uint64_t)cache_size;
+}
+
 void Config_Init(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 	config.vkey_entity_count = _Config_GetVirtualKeyEntitiesThreshold(ctx, argv, argc);
 	config.thread_count = _Config_GetThreadCount(ctx, argv, argc);
+	config.cache_size = _Config_GetCacheSize(ctx, argv, argc);
 	_initialized = true;
 }
 
@@ -105,7 +131,10 @@ long long Config_GetThreadCount() {
 	return _Config_GetModuleConfig().thread_count;
 }
 
-uint64_t Confic_GetVirtualKeyEntityCount() {
+uint64_t Config_GetVirtualKeyEntityCount() {
 	return _Config_GetModuleConfig().vkey_entity_count;
 }
 
+uint64_t Config_GetCacheSize() {
+	return _Config_GetModuleConfig().cache_size;
+}
